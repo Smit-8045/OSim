@@ -6,10 +6,8 @@ const DeadlockSimulator = () => {
     { id: 'P1', name: 'Process 1', allocation: [0, 1, 0], max: [7, 5, 3], need: [7, 4, 3] },
     { id: 'P2', name: 'Process 2', allocation: [2, 0, 0], max: [3, 2, 2], need: [1, 2, 2] },
     { id: 'P3', name: 'Process 3', allocation: [3, 0, 2], max: [9, 0, 2], need: [6, 0, 0] },
-    // Corrected: max[0] for P4 is now 4, not 2, to avoid negative need
-    { id: 'P4', name: 'Process 4', allocation: [4, 1, 1], max: [4, 2, 2], need: [0, 1, 1] },
-    { id: 'P5', name: 'Process 5', allocation: [0, 0, 2], max: [4, 3, 3], need: [4, 3, 1] },
-    { id: 'P6', name: 'Process 6', allocation: [0, 0, 0], max: [1, 1, 1], need: [1, 1, 1] }
+    { id: 'P4', name: 'Process 4', allocation: [2, 1, 1], max: [2, 2, 2], need: [0, 1, 1] },
+    { id: 'P5', name: 'Process 5', allocation: [0, 0, 2], max: [4, 3, 3], need: [4, 3, 1] }
   ]);
 
   const [available, setAvailable] = useState([3, 3, 2]);
@@ -19,55 +17,50 @@ const DeadlockSimulator = () => {
 
   const resourceTypes = ['R1', 'R2', 'R3'];
 
-  // Helper to recalculate needs safely
-  const recalculateNeeds = (procs) => {
-    return procs.map(proc => ({
-      ...proc,
-      need: proc.max.map((max, i) =>
-        Math.max(0, max - proc.allocation[i]) // Always non-negative
-      )
-    }));
-  };
-
-  // Main Banker's Algorithm
   const runBankersAlgorithm = () => {
     const work = [...available];
     const finish = new Array(processes.length).fill(false);
     const sequence = [];
     const steps = [];
-    let localProcs = recalculateNeeds(processes); // Always up-to-date needs
-
     let found = true;
-    while (found && sequence.length < localProcs.length) {
+
+    while (found && sequence.length < processes.length) {
       found = false;
-      for (let i = 0; i < localProcs.length; i++) {
+      
+      for (let i = 0; i < processes.length; i++) {
         if (!finish[i]) {
-          const process = localProcs[i];
+          const process = processes[i];
           const canAllocate = process.need.every((need, j) => need <= work[j]);
+          
           if (canAllocate) {
+            // Process can complete
             finish[i] = true;
             sequence.push(process.id);
+            
+            // Add allocated resources back to work
             for (let j = 0; j < work.length; j++) {
               work[j] += process.allocation[j];
             }
+            
             steps.push({
               process: process.id,
               work: [...work],
               action: `${process.id} completes and releases resources`
             });
+            
             found = true;
             break;
           }
         }
       }
     }
-    const safe = sequence.length === localProcs.length;
+
+    const safe = sequence.length === processes.length;
     setSafeSequence(sequence);
     setIsSystemSafe(safe);
     setSimulationSteps(steps);
   };
 
-  // Add Process
   const addProcess = () => {
     const newId = `P${processes.length + 1}`;
     const newProcess = {
@@ -77,25 +70,20 @@ const DeadlockSimulator = () => {
       max: [1, 1, 1],
       need: [1, 1, 1]
     };
-    setProcesses(recalculateNeeds([...processes, newProcess]));
+    setProcesses([...processes, newProcess]);
   };
 
-  // Update Process: Enforce max >= alloc, recalc needs
   const updateProcess = (index, field, resourceIndex, value) => {
-    let newProcesses = [...processes];
-    let v = Math.max(0, parseInt(value) || 0);
-
-    if (field === 'allocation') {
-      // Never allow allocation > max
-      v = Math.min(newProcesses[index].max[resourceIndex], v);
-      newProcesses[index].allocation[resourceIndex] = v;
-    } else if (field === 'max') {
-      // Always allow max >= allocation at least
-      v = Math.max(newProcesses[index].allocation[resourceIndex], v);
-      newProcesses[index].max[resourceIndex] = v;
+    const newProcesses = [...processes];
+    newProcesses[index][field][resourceIndex] = parseInt(value) || 0;
+    
+    // Recalculate need
+    if (field === 'allocation' || field === 'max') {
+      newProcesses[index].need = newProcesses[index].max.map(
+        (max, i) => max - newProcesses[index].allocation[i]
+      );
     }
-    // Always recalculate need after any change
-    newProcesses = recalculateNeeds(newProcesses);
+    
     setProcesses(newProcesses);
   };
 
@@ -130,7 +118,7 @@ const DeadlockSimulator = () => {
                   value={value}
                   onChange={(e) => {
                     const newAvailable = [...available];
-                    newAvailable[index] = Math.max(0, parseInt(e.target.value) || 0);
+                    newAvailable[index] = parseInt(e.target.value) || 0;
                     setAvailable(newAvailable);
                   }}
                   className="w-16 px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500"
@@ -139,6 +127,7 @@ const DeadlockSimulator = () => {
               </div>
             ))}
           </div>
+
           <button
             onClick={runBankersAlgorithm}
             className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all duration-200"
@@ -146,6 +135,7 @@ const DeadlockSimulator = () => {
             <Shield className="h-4 w-4" />
             <span>Run Banker's Algorithm</span>
           </button>
+
           <button
             onClick={addProcess}
             className="flex items-center space-x-2 px-4 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-200"
@@ -154,6 +144,7 @@ const DeadlockSimulator = () => {
             <span>Add Process</span>
           </button>
         </div>
+
         {/* System Status */}
         {isSystemSafe !== null && (
           <div className={`p-4 rounded-xl border-2 ${
@@ -189,6 +180,7 @@ const DeadlockSimulator = () => {
             <h2 className="text-xl font-bold text-gray-900">Resource Allocation Table</h2>
           </div>
         </div>
+
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -221,6 +213,7 @@ const DeadlockSimulator = () => {
               {processes.map((process, processIndex) => (
                 <tr key={process.id} className="border-b hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-900">{process.name}</td>
+                  
                   {/* Allocation */}
                   {process.allocation.map((value, resourceIndex) => (
                     <td key={`alloc-${processIndex}-${resourceIndex}`} className="px-2 py-3 text-center">
@@ -230,10 +223,10 @@ const DeadlockSimulator = () => {
                         onChange={(e) => updateProcess(processIndex, 'allocation', resourceIndex, e.target.value)}
                         className="w-12 px-1 py-1 text-center border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                         min="0"
-                        max={process.max[resourceIndex]}
                       />
                     </td>
                   ))}
+                  
                   {/* Max */}
                   {process.max.map((value, resourceIndex) => (
                     <td key={`max-${processIndex}-${resourceIndex}`} className="px-2 py-3 text-center">
@@ -242,10 +235,11 @@ const DeadlockSimulator = () => {
                         value={value}
                         onChange={(e) => updateProcess(processIndex, 'max', resourceIndex, e.target.value)}
                         className="w-12 px-1 py-1 text-center border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                        min={process.allocation[resourceIndex]}
+                        min="0"
                       />
                     </td>
                   ))}
+                  
                   {/* Need (calculated) */}
                   {process.need.map((value, resourceIndex) => (
                     <td key={`need-${processIndex}-${resourceIndex}`} className="px-2 py-3 text-center">
@@ -262,6 +256,7 @@ const DeadlockSimulator = () => {
           </table>
         </div>
       </div>
+
       {/* Simulation Steps */}
       {simulationSteps.length > 0 && (
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
